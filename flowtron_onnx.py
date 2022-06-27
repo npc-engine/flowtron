@@ -446,27 +446,33 @@ class FlowtronTTS(torch.nn.Module):
         spect = spect[:, :, :-time_cutoff]
         # Replacing unfold since it is compiled into a weird onnx representation (with slices and concat)
         spect = spect.reshape(1, 80, -1, self.n_group).permute(0, 2, 1, 3)
-        spect = spect.contiguous().reshape(
-            spect.size(0), spect.size(1), -1
-        ).permute(0, 2, 1)
+        spect = (
+            spect.contiguous()
+            .reshape(spect.size(0), spect.size(1), -1)
+            .permute(0, 2, 1)
+        )
 
-        if spect.type() == 'torch.cuda.HalfTensor':
+        if spect.type() == "torch.cuda.HalfTensor":
             audio = torch.randn(
                 spect.size(0),
                 self.n_remaining_channels,
-                spect.size(2), dtype=torch.half, device='cuda'
+                spect.size(2),
+                dtype=torch.half,
+                device="cuda",
             )
         else:
             audio = torch.randn(
                 spect.size(0),
                 self.n_remaining_channels,
-                spect.size(2), dtype=torch.float, device='cuda'
+                spect.size(2),
+                dtype=torch.float,
+                device="cuda",
             )
 
-        audio = torch.autograd.Variable(sigma*audio)
+        audio = torch.autograd.Variable(sigma * audio)
 
         for k in reversed(range(self.n_flows)):
-            n_half = int(audio.size(1)/2)
+            n_half = int(audio.size(1) / 2)
             audio_0 = audio[:, :n_half, :]
             audio_1 = audio[:, n_half:, :]
 
@@ -474,19 +480,19 @@ class FlowtronTTS(torch.nn.Module):
 
             s = output[:, n_half:, :]
             b = output[:, :n_half, :]
-            audio_1 = (audio_1 - b)/torch.exp(s)
+            audio_1 = (audio_1 - b) / torch.exp(s)
             audio = torch.cat([audio_0, audio_1], 1)
 
             audio = self.convinv[k](audio, reverse=True)
 
             if k % self.n_early_every == 0 and k > 0:
-                if spect.type() == 'torch.cuda.HalfTensor':
+                if spect.type() == "torch.cuda.HalfTensor":
                     z = torch.randn(
                         spect.size(0),
                         self.n_early_size,
                         spect.size(2),
                         dtype=torch.half,
-                        device='cuda'
+                        device="cuda",
                     )
                 else:
                     z = torch.randn(
@@ -494,9 +500,9 @@ class FlowtronTTS(torch.nn.Module):
                         self.n_early_size,
                         spect.size(2),
                         dtype=torch.float,
-                        device='cuda'
+                        device="cuda",
                     )
-                audio = torch.cat((sigma*z, audio), 1)
+                audio = torch.cat((sigma * z, audio), 1)
 
         audio = audio.permute(0, 2, 1).contiguous().reshape(audio.size(0), -1)
         return audio
@@ -549,19 +555,25 @@ class SimpleTTSRunner:
             residual = np.transpose(residual, axes=(1, 2, 0))
             start = time.time()
             audio = self.vocoder.run(None, {"mels": residual})[0]
-            audio = np.where((audio > (audio.mean() - audio.std())) | (audio< (audio.mean() + audio.std())), audio, audio.mean())
+            audio = np.where(
+                (audio > (audio.mean() - audio.std()))
+                | (audio < (audio.mean() + audio.std())),
+                audio,
+                audio.mean(),
+            )
             tmp = audio
             if last_audio is not None:
-                cumsum_vec = np.cumsum(np.concatenate([last_audio, audio], axis=1), axis=1) 
+                cumsum_vec = np.cumsum(
+                    np.concatenate([last_audio, audio], axis=1), axis=1
+                )
                 ma_vec = (cumsum_vec[:, 5:] - cumsum_vec[:, :-5]) / 5
-                audio = ma_vec[:, last_audio.shape[1]:]
+                audio = ma_vec[:, last_audio.shape[1] :]
             last_audio = tmp
             end = time.time()
             process_time = end - start
             audio_time = len(audio.reshape(-1)) / 22050
             print(f" > Real-time factor: {process_time / audio_time}")
             audio = audio.reshape(-1)
-            # audio = audio / np.abs(audio).max()
             yield audio
 
     def run_backward_flow(self, residual, enc_outps_ortvalue):

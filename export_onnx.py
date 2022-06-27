@@ -14,10 +14,7 @@
 #  limitations under the License.
 #
 ###############################################################################
-import matplotlib
 
-matplotlib.use("Agg")
-import matplotlib.pylab as plt
 
 import os
 import argparse
@@ -40,11 +37,12 @@ from copy import deepcopy
 import sounddevice as sd
 from queue import Queue
 
-# import faulthandler
 import time
 
-# faulthandler.enable()
+import matplotlib
 
+matplotlib.use("Agg")
+import matplotlib.pylab as plt
 
 def init_states(residual):
     last_outputs = torch.zeros(
@@ -299,23 +297,23 @@ def export(
 
         encoder = rt.InferenceSession(
             "./encoder.onnx",
-            providers=rt.get_available_providers()[:1],
+            providers=rt.get_available_providers(),
             sess_options=sess_options,
         )
         backward_flow = rt.InferenceSession(
             "./backward_flow.onnx",
-            providers=rt.get_available_providers()[:1],
+            providers=rt.get_available_providers(),
             sess_options=sess_options,
         )
         print([i.name for i in backward_flow.get_inputs()])
         forward_flow = rt.InferenceSession(
             "./forward_flow.onnx",
-            providers=rt.get_available_providers()[:1],
+            providers=rt.get_available_providers(),
             sess_options=sess_options,
         )
         waveglow = rt.InferenceSession(
             "./waveglow.onnx",
-            providers=rt.get_available_providers()[:1],
+            providers=rt.get_available_providers(),
             sess_options=sess_options,
         )
         print("Model loaded, running tts.")

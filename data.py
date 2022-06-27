@@ -29,7 +29,7 @@ from text import text_to_sequence, cmudict, _clean_text, get_arpabet
 
 
 def load_filepaths_and_text(filename, split="|"):
-    with open(filename, encoding='utf-8') as f:
+    with open(filename, encoding="utf-8") as f:
         filepaths_and_text = [line.strip().split(split) for line in f]
     return filepaths_and_text
 
@@ -41,23 +41,41 @@ def load_wav_to_torch(full_path):
 
 
 class Data(torch.utils.data.Dataset):
-    def __init__(self, filelist_path, filter_length, hop_length, win_length,
-                 sampling_rate, mel_fmin, mel_fmax, max_wav_value, p_arpabet,
-                 cmudict_path, text_cleaners, speaker_ids=None, randomize=True,
-                 seed=1234):
+    def __init__(
+        self,
+        filelist_path,
+        filter_length,
+        hop_length,
+        win_length,
+        sampling_rate,
+        mel_fmin,
+        mel_fmax,
+        max_wav_value,
+        p_arpabet,
+        cmudict_path,
+        text_cleaners,
+        speaker_ids=None,
+        randomize=True,
+        seed=1234,
+    ):
         self.max_wav_value = max_wav_value
         self.audiopaths_and_text = load_filepaths_and_text(filelist_path)
-        self.stft = TacotronSTFT(filter_length=filter_length,
-                                 hop_length=hop_length,
-                                 win_length=win_length,
-                                 sampling_rate=sampling_rate,
-                                 mel_fmin=mel_fmin, mel_fmax=mel_fmax)
+        self.stft = TacotronSTFT(
+            filter_length=filter_length,
+            hop_length=hop_length,
+            win_length=win_length,
+            sampling_rate=sampling_rate,
+            mel_fmin=mel_fmin,
+            mel_fmax=mel_fmax,
+        )
         self.sampling_rate = sampling_rate
         self.text_cleaners = text_cleaners
         self.p_arpabet = p_arpabet
         self.cmudict = cmudict.CMUDict(cmudict_path, keep_ambiguous=True)
         if speaker_ids is None:
-            self.speaker_ids = self.create_speaker_lookup_table(self.audiopaths_and_text)
+            self.speaker_ids = self.create_speaker_lookup_table(
+                self.audiopaths_and_text
+            )
         else:
             self.speaker_ids = speaker_ids
 
@@ -84,10 +102,15 @@ class Data(torch.utils.data.Dataset):
 
     def get_text(self, text):
         text = _clean_text(text, self.text_cleaners)
-        words = re.findall(r'\S*\{.*?\}\S*|\S+', text)
-        text = ' '.join([get_arpabet(word, self.cmudict)
-                         if random.random() < self.p_arpabet else word
-                         for word in words])
+        words = re.findall(r"\S*\{.*?\}\S*|\S+", text)
+        text = " ".join(
+            [
+                get_arpabet(word, self.cmudict)
+                if random.random() < self.p_arpabet
+                else word
+                for word in words
+            ]
+        )
         text_norm = torch.LongTensor(text_to_sequence(text))
         return text_norm
 
@@ -96,8 +119,11 @@ class Data(torch.utils.data.Dataset):
         audiopath, text, speaker_id = self.audiopaths_and_text[index]
         audio, sampling_rate = load_wav_to_torch(audiopath)
         if sampling_rate != self.sampling_rate:
-            raise ValueError("{} SR doesn't match target {} SR".format(
-                sampling_rate, self.sampling_rate))
+            raise ValueError(
+                "{} SR doesn't match target {} SR".format(
+                    sampling_rate, self.sampling_rate
+                )
+            )
 
         mel = self.get_mel(audio)
         text_encoded = self.get_text(text)
@@ -108,8 +134,9 @@ class Data(torch.utils.data.Dataset):
         return len(self.audiopaths_and_text)
 
 
-class DataCollate():
+class DataCollate:
     """ Zero-pads model inputs and targets based on number of frames per step """
+
     def __init__(self, n_frames_per_step=1):
         self.n_frames_per_step = n_frames_per_step
 
@@ -117,21 +144,23 @@ class DataCollate():
         """Collate's training batch from normalized text and mel-spectrogram """
         # Right zero-pad all one-hot text sequences to max input length
         input_lengths, ids_sorted_decreasing = torch.sort(
-            torch.LongTensor([len(x[2]) for x in batch]),
-            dim=0, descending=True)
+            torch.LongTensor([len(x[2]) for x in batch]), dim=0, descending=True
+        )
         max_input_len = input_lengths[0]
 
         text_padded = torch.LongTensor(len(batch), max_input_len)
         text_padded.zero_()
         for i in range(len(ids_sorted_decreasing)):
             text = batch[ids_sorted_decreasing[i]][2]
-            text_padded[i, :text.size(0)] = text
+            text_padded[i, : text.size(0)] = text
 
         # Right zero-pad mel-spec
         num_mel_channels = batch[0][0].size(0)
         max_target_len = max([x[0].size(1) for x in batch])
         if max_target_len % self.n_frames_per_step != 0:
-            max_target_len += self.n_frames_per_step - max_target_len % self.n_frames_per_step
+            max_target_len += (
+                self.n_frames_per_step - max_target_len % self.n_frames_per_step
+            )
             assert max_target_len % self.n_frames_per_step == 0
 
         # include mel padded, gate padded and speaker ids
@@ -143,12 +172,19 @@ class DataCollate():
         speaker_ids = torch.LongTensor(len(batch))
         for i in range(len(ids_sorted_decreasing)):
             mel = batch[ids_sorted_decreasing[i]][0]
-            mel_padded[i, :, :mel.size(1)] = mel
-            gate_padded[i, mel.size(1)-1:] = 1
+            mel_padded[i, :, : mel.size(1)] = mel
+            gate_padded[i, mel.size(1) - 1 :] = 1
             output_lengths[i] = mel.size(1)
             speaker_ids[i] = batch[ids_sorted_decreasing[i]][1]
 
-        return mel_padded, speaker_ids, text_padded, input_lengths, output_lengths, gate_padded
+        return (
+            mel_padded,
+            speaker_ids,
+            text_padded,
+            input_lengths,
+            output_lengths,
+            gate_padded,
+        )
 
 
 # ===================================================================
@@ -157,12 +193,11 @@ class DataCollate():
 # ===================================================================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--config', type=str,
-                        help='JSON file for configuration')
-    parser.add_argument('-f', '--filelist', type=str,
-                        help='List of files to generate mels')
-    parser.add_argument('-o', '--output_dir', type=str,
-                        help='Output directory')
+    parser.add_argument("-c", "--config", type=str, help="JSON file for configuration")
+    parser.add_argument(
+        "-f", "--filelist", type=str, help="List of files to generate mels"
+    )
+    parser.add_argument("-o", "--output_dir", type=str, help="Output directory")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -183,6 +218,6 @@ if __name__ == "__main__":
         audio, sr = load_wav_to_torch(filepath)
         melspectrogram = mel2samp.get_mel(audio)
         filename = os.path.basename(filepath)
-        new_filepath = args.output_dir + '/' + filename + '.pt'
+        new_filepath = args.output_dir + "/" + filename + ".pt"
         print(new_filepath)
         torch.save(melspectrogram, new_filepath)
